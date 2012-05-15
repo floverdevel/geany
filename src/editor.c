@@ -520,6 +520,20 @@ static void on_update_ui(GeanyEditor *editor, G_GNUC_UNUSED SCNotification *nt)
 
 	ui_update_statusbar(editor->document, pos);
 
+	/* todo: move this into a function */
+	/* editor_higlight_selection(); */
+	if (nt->updated & SC_UPDATE_SELECTION)
+	{
+		gchar *s = sci_get_selection_contents(sci);
+		gint marked_count = search_mark_all(editor->document, s, 0);
+		if (marked_count) {
+			msgwin_status_add(ngettext("Found %d match for \"%s\".",
+                                                   "Found %d matches for \"%s\".", marked_count), marked_count, s);
+		}
+	}	
+	/* end of todo: move this into a function */
+	
+
 #if 0
 	/** experimental code for inverting selections */
 	{
