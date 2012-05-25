@@ -501,6 +501,56 @@ static void on_margin_click(GeanyEditor *editor, SCNotification *nt)
 	}
 }
 
+/* Clears markers if text is null/empty.
+ * @return Number of matches marked. */
+static gint editor_mark_all(GeanyDocument *doc, const gchar *search_text, gint initial_pos, gint flags)
+{
+        //ScintillaObject *sci = doc->editor->sci;
+        //gint line = 0;
+        
+	gint pos, count = 0;
+        gsize len;
+        struct Sci_TextToFind ttf;
+
+        g_return_val_if_fail(doc != NULL, 0);
+
+        /* clear previous search indicators */
+        editor_indicator_clear(doc->editor, GEANY_INDICATOR_SEARCH);
+
+        if (G_UNLIKELY(! NZV(search_text)))
+                return 0;
+
+        ttf.chrg.cpMin = 0;
+        ttf.chrg.cpMax = sci_get_length(doc->editor->sci);
+        ttf.lpstrText = (gchar *)search_text;
+        while (TRUE)
+        {
+                pos = sci_find_text(doc->editor->sci, flags, &ttf);
+                if (pos == -1) break;
+
+		//line = sci_get_current_line(sci);
+		//editor_indicator_set_on_line(doc->editor, GEANY_INDICATOR_ERROR, line - 1);
+                len = ttf.chrgText.cpMax - ttf.chrgText.cpMin;
+                if (len && (pos != initial_pos && pos != initial_pos - len))
+                        editor_indicator_set_on_range(doc->editor, GEANY_INDICATOR_SEARCH, pos, pos + len);
+
+                ttf.chrg.cpMin = ttf.chrgText.cpMax;
+                ++count;
+        }
+        return count;
+}
+
+static void editor_highlight_selection(GeanyEditor *editor)
+{
+	ScintillaObject *sci = editor->sci;
+	
+	gchar *s = sci_get_selection_contents(sci);
+	gint marked_count = editor_mark_all(editor->document, s, sci_get_current_position(sci), 0);
+	if (marked_count) {
+		msgwin_status_add(ngettext("Found %d match for \"%s\".",
+		                           "Found %d matches for \"%s\".", marked_count), marked_count, s);
+	}
+}
 
 static void on_update_ui(GeanyEditor *editor, G_GNUC_UNUSED SCNotification *nt)
 {
@@ -520,18 +570,8 @@ static void on_update_ui(GeanyEditor *editor, G_GNUC_UNUSED SCNotification *nt)
 
 	ui_update_statusbar(editor->document, pos);
 
-	/* todo: move this into a function */
-	/* editor_higlight_selection(); */
-	if (nt->updated & SC_UPDATE_SELECTION)
-	{
-		gchar *s = sci_get_selection_contents(sci);
-		gint marked_count = search_mark_all(editor->document, s, 0);
-		if (marked_count) {
-			msgwin_status_add(ngettext("Found %d match for \"%s\".",
-                                                   "Found %d matches for \"%s\".", marked_count), marked_count, s);
-		}
-	}	
-	/* end of todo: move this into a function */
+	/* highlight others occurence of the current selected text */
+	editor_highlight_selection(editor);
 	
 
 #if 0
