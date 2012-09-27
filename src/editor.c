@@ -94,6 +94,11 @@ static struct
 
 static gchar indent[100];
 
+static struct
+{
+	GtkWidget *pWindow;
+	GtkWidget *pLabel;
+} selected_text_tip = {NULL, NULL};
 
 static void on_new_line_added(GeanyEditor *editor);
 static gboolean handle_xml(GeanyEditor *editor, gint pos, gchar ch);
@@ -501,39 +506,91 @@ static void on_margin_click(GeanyEditor *editor, SCNotification *nt)
 	}
 }
 
+/**
+ *
+ */
+static void selected_text_tip_free(void)
+{
+	gtk_widget_destroy(selected_text_tip.pWindow);
+	gtk_widget_destroy(selected_text_tip.pLabel);
+	selected_text_tip.pWindow = NULL;
+	selected_text_tip.pLabel = NULL;
+}
+
+/**
+ *
+ */
+static void selected_text_tip_init(gint pos, gint count)
+{
+	if (!selected_text_tip.pWindow)
+	{
+		 selected_text_tip.pWindow = gtk_window_new(GTK_WINDOW_POPUP);
+	}
+	if (!selected_text_tip.pLabel)
+	{
+		selected_text_tip.pLabel = gtk_label_new("");
+		gtk_container_add(GTK_CONTAINER(selected_text_tip.pWindow), selected_text_tip.pLabel);
+	}
+	gtk_window_move(GTK_WINDOW(selected_text_tip.pWindow), 1000, 150); // todo : positionnez la fenetre à la droite de l'écran
+	gtk_window_set_default_size(GTK_WINDOW(selected_text_tip.pWindow), 64, 32);
+	gtk_label_set_label(
+		GTK_LABEL(selected_text_tip.pLabel),
+                g_strdup_printf(
+                        ngettext(
+                                "%d of %d match",
+                                "%d of %d matches",
+                                count
+                        ),
+			pos,
+                        count
+                )
+
+	);
+	gtk_widget_show_all(selected_text_tip.pWindow);
+}
+
 /* Clears markers if text is null/empty.
  * @return Number of matches marked. */
-static gint editor_mark_all(GeanyDocument *doc, const gchar *search_text, gint initial_pos, gint flags)
+static gint editor_mark_all(GeanyDocument *doc, const gchar *search_text, gint initial_pos_start, gint initial_pos_end, gint flags)
 {
-        //ScintillaObject *sci = doc->editor->sci;
-        //gint line = 0;
-        
+	ScintillaObject *sci = doc->editor->sci;
+	gint line = 0;
+	gint selected_text_count_pos = 0;
 	gint pos, count = 0;
-        gsize len;
-        struct Sci_TextToFind ttf;
+	gsize len;
+	struct Sci_TextToFind ttf;
 
-        g_return_val_if_fail(doc != NULL, 0);
+	g_return_val_if_fail(doc != NULL, 0);
 
         /* clear previous search indicators */
-        editor_indicator_clear(doc->editor, GEANY_INDICATOR_SEARCH);
+	editor_indicator_clear(doc->editor, GEANY_INDICATOR_SEARCH);
 
-        if (G_UNLIKELY(! NZV(search_text)))
-                return 0;
+	if (G_UNLIKELY(! NZV(search_text)))
+	{
+		selected_text_tip_free();
+		return 0;
+	}
 
-        ttf.chrg.cpMin = 0;
-        ttf.chrg.cpMax = sci_get_length(doc->editor->sci);
-        ttf.lpstrText = (gchar *)search_text;
-        while (TRUE)
-        {
-                pos = sci_find_text(doc->editor->sci, flags, &ttf);
-                if (pos == -1) break;
-
-		//line = sci_get_current_line(sci);
-		//editor_indicator_set_on_line(doc->editor, GEANY_INDICATOR_ERROR, line - 1);
+	ttf.chrg.cpMin = 0;
+	ttf.chrg.cpMax = sci_get_length(doc->editor->sci);
+	ttf.lpstrText = (gchar *)search_text;
+	while (TRUE)
+	{
+		pos = sci_find_text(doc->editor->sci, flags, &ttf);
+		if (pos == -1)
+		{
+			selected_text_tip_init(selected_text_count_pos, count);
+			break;
+		}
                 len = ttf.chrgText.cpMax - ttf.chrgText.cpMin;
-                if (len && (pos != initial_pos && pos != initial_pos - len))
+                if (len && ((pos != initial_pos_start) && (pos + len != initial_pos_end)))
+		{
                         editor_indicator_set_on_range(doc->editor, GEANY_INDICATOR_SEARCH, pos, pos + len);
-
+		}
+		else
+		{
+			selected_text_count_pos = count + 1;
+		}
                 ttf.chrg.cpMin = ttf.chrgText.cpMax;
                 ++count;
         }
@@ -545,11 +602,13 @@ static void editor_highlight_selection(GeanyEditor *editor)
 	ScintillaObject *sci = editor->sci;
 	
 	gchar *s = sci_get_selection_contents(sci);
-	gint marked_count = editor_mark_all(editor->document, s, sci_get_current_position(sci), 0);
+	gint marked_count = editor_mark_all(editor->document, s, sci_get_selection_start(sci), sci_get_selection_end(sci), 0);
+/*
 	if (marked_count) {
 		msgwin_status_add(ngettext("Found %d match for \"%s\".",
 		                           "Found %d matches for \"%s\".", marked_count), marked_count, s);
 	}
+*/
 }
 
 static void on_update_ui(GeanyEditor *editor, G_GNUC_UNUSED SCNotification *nt)
